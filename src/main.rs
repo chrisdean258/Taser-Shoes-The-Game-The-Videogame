@@ -1,10 +1,7 @@
 #![allow(dead_code)]
 use clap::Parser;
 use serde::Deserialize;
-use std::fs::File;
-use std::io::Read;
 use std::path::PathBuf;
-use urlencoding::decode;
 use warp::Filter;
 
 #[derive(Parser, Debug)]
@@ -46,17 +43,20 @@ async fn main() -> anyhow::Result<()> {
         warp::reply::with_header(reply, "content-type", "text/javascript")
     });
 
-    let cards = warp::path!("cards" / String).map(|name: String| {
-        let name = decode(&name).expect("utf-8").into_owned();
-        let name = format!("cards/{name}");
-        let mut f = File::open(&name).expect("no file found");
-        let metadata = std::fs::metadata(&name).expect("unable to read metadata");
-        let mut buffer = vec![0; metadata.len() as usize];
-        let _ = f.read(&mut buffer).expect("buffer overflow");
-        warp::http::Response::builder()
-            .header("Content-Type", "image/png")
-            .body(buffer)
-    });
+    let cards = warp::path!("cards" / "full" / ..)
+        .and(warp::fs::dir("./cards/full"))
+        .map(|reply| {
+            eprintln!("getting card");
+            warp::reply::with_header(reply, "content-type", "image/png")
+        });
+
+    let cards = warp::path!("cards" / "small" / ..)
+        .and(warp::fs::dir("./cards/small"))
+        .map(|reply| {
+            eprintln!("getting card");
+            warp::reply::with_header(reply, "content-type", "image/png")
+        })
+        .or(cards);
 
     let start_game = warp::path("game")
         .and(warp::post())

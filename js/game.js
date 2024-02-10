@@ -37,7 +37,7 @@ class DedupList {
 }
 
 class Card {
-	constructor(position, is_mine, label) {
+	constructor(position, is_mine, image) {
 		this.is_mine = is_mine;
 		this.held = false;
 		this.x = 0;
@@ -45,12 +45,13 @@ class Card {
 		this.position = position;
 		this.prev_pressed = false
 		this.display_preference = 0;
-		this.label = label
+		this.image = image
 	}
 
 	draw() {
 		rect(this.x, this.y, card_size, card_size, margin)
-		text(this.label, this.x, this.y)
+		let img = this.image.small;
+		image(img, this.x, this.y, card_size, card_size, 0, 0, img.width, img.height, CONTAIN);
 	}
 
 	pressed(board) {
@@ -244,17 +245,12 @@ class Game {
 		this.hand = new DedupList()
 		this.opponent_hand = new DedupList()
 		this.board = new Board(this.hand, this.opponent_hand)
-		for(let i = 0; i < 5; i++) {
-			this.deck.push(new Card(this.board.hand_position, true, l++))
-			this.board.positions[0].add(this.deck.at(-1))
-		}
-		for(let i = 0; i < 4; i++) {
-			this.deck.push(new Card(this.board.opponent_hand, false, l++))
-			this.board.positions[1].add(this.deck.at(-1))
-		}
 
 		this.cards = getCards();
-
+		for(let card of this.cards) {
+			this.deck.push(new Card(this.board.hand_position, true, card))
+			this.board.positions.at(-2).add(this.deck.at(-1))
+		}
 
 		sizes();
 	}
@@ -271,6 +267,7 @@ class Game {
 	draw() {
 		this.board.draw()
 		push()
+		imageMode(CENTER)
 		translate(centerX, centerY);
 		rectMode(CENTER);
 		this.deck.reverse()
@@ -278,7 +275,6 @@ class Game {
 			card.draw();
 		}
 		this.deck.reverse()
-		image(this.cards[0], 0, 0)
 		pop()
 	}
 
@@ -296,7 +292,7 @@ function setup() {
 
 function draw() {
 	background("#1c2b42")
-	game.update()
+	game.update();
 	game.draw()
 }
 
