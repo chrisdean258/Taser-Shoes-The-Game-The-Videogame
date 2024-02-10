@@ -37,18 +37,20 @@ class DedupList {
 }
 
 class Card {
-	constructor(position, is_mine) {
+	constructor(position, is_mine, label) {
 		this.is_mine = is_mine;
 		this.held = false;
 		this.x = 0;
-		this.y = position.hint();
+		this.y = 0;
 		this.position = position;
 		this.prev_pressed = false
+		this.display_preference = 0;
+		this.label = label
 	}
 
 	draw() {
-
 		rect(this.x, this.y, card_size, card_size, margin)
+		text(this.label, this.x, this.y)
 	}
 
 	pressed(board) {
@@ -64,7 +66,6 @@ class Card {
 			this.held = false;
 			this.prev_pressed = false;
 			holding = false;
-			board.drop_card(this)
 		}
 	}
 
@@ -79,6 +80,8 @@ class Card {
 		if (this.held) {
 			this.x = mouseX + this.offsetX;
 			this.y = mouseY + this.offsetY;
+			board.update_attractor(this)
+			this.display_preference = frameCount;
 		} else {
 			this.position.attract(this)
 		}
@@ -86,104 +89,123 @@ class Card {
 	}
 }
 
-class BoardPosition {
+class Position {
 	constructor(x, y) {
-		this.x = x
-		this.y = y
-	}
-
-	attract(card) {
-		let v = createVector(card.x - this.x, card.y - this.y);
-		if(v.mag() < rtnspeed){
-			card.x = this.x
-			card.y = this.y
-			return true;
-		}
-		v.setMag(rtnspeed);
-		card.x -= v.x;
-		card.y -= v.y;
-		return false;
-	}
-
-	dist(card) {
-		let v = createVector(card.x - this.x, card.y - this.y);
-		return v.mag()
-
-	}
-
-	hint() {
-		return 0
+		this.cards = new DedupList();
+		this.pos = createVector(x, y)
 	}
 
 	draw() {
-		circle(this.x, this.y, 10)
+		let c = this.center()
+		circle(c.x, c.y, 10)
 	}
-}
 
-class HandPosition {
-	constructor(hand, y) {
-		this.y = y
-		this.hand = hand
+	center() {
+		return p5.Vector.mult(this.pos, card_margin)
+	}
+
+	cleanup() {
+		for(let card of this.cards.list) {
+			if(card.position != this){
+				this.cards.pop(card)
+			}
+		}
+	}
+
+	coords(card) {
+		return createVector(this.getX(card), this.getY(card))
 	}
 
 	attract(card) {
-		const i = this.hand.indexOf(card);
-		if(i == -1){
-			console.log("weird")
-			return
+		this.cleanup()
+		let coords = this.coords(card)
+		let v = p5.Vector.sub(createVector(card.x, card.y), coords)
+		if(v.mag() <= rtnspeed){
+			card.x = coords.x
+			card.y = coords.y
+		} else {
+			v.setMag(rtnspeed);
+			card.x -= v.x;
+			card.y -= v.y;
 		}
-		const x = (card_margin * (i - (this.hand.list.length - 1) / 2));
-		let v = createVector(card.x - x, card.y - this.y);
-		if(v.mag() < rtnspeed){
-			card.x = x
-			card.y = this.y
-			return true;
-		}
-		v.setMag(rtnspeed);
-		card.x -= v.x;
-		card.y -= v.y;
-		return false;
 
 	}
 
-	hint() {
-		return this.y
+	add(card) {
+		this.cards.push(card);
+		card.position = this;
 	}
-
 
 	dist(card) {
-		return Math.abs(card.y - this.y)
+		return this.center().dist(createVector(card.x, card.y))
 	}
 
+	getX(card) {
+		return this.pos.x * card_margin
+	}
+
+	getY(card) {
+		return this.pos.y * card_margin
+	}
+
+}
+
+class BoardPosition extends Position {
+	getY(card) {
+		this.cleanup()
+		const i = this.cards.indexOf(card) - (this.cards.list.length - 1) / 2;
+		let dy = i * margin;
+		return this.pos.y * card_margin + dy
+	}
+}
+
+class DeckPosition extends Position { }
+
+class HandPosition extends Position {
+	constructor(y) {
+		super(0, y)
+	}
+
+	draw() {
+		line(-2 * card_margin, this.pos.y * card_margin, 2 * card_margin, this.pos.y * card_margin)
+	}
+
+	getX(card) {
+		this.cleanup()
+		const i = this.cards.indexOf(card);
+		let x = (i - (this.cards.list.length - 1) / 2);
+		return x * card_margin
+	}
+
+	dist(card) {
+		return Math.abs(card.y - this.getY(card))
+	}
 }
 
 
 class Board {
 	constructor(hand, opp_hand) {
 		this.positions = []
-		this.cards = new DedupList()
 		this.hand = hand;
-		this.hand_position = new HandPosition(hand, 3 * card_margin);
-		this.opponent_hand = new HandPosition(opp_hand, - 3 * card_margin);
+		this.positions.push(new HandPosition(4));
+		this.positions.push(new HandPosition(-4));
 		for(let i = -2; i <= 2; i++) {
-			for(let j = -2; j <= 2; j++) {
-				this.positions.push(new BoardPosition(i * card_margin, j * card_margin))
+			for(let j = -3; j <= 3; j++) {
+				this.positions.push(new BoardPosition(i, j))
 			}
 		}
-		this.positions.push(new BoardPosition(-3 * card_margin, 2 * card_margin))
-		this.positions.push(new BoardPosition(-3 * card_margin, 1 * card_margin))
-		this.positions.push(new BoardPosition(-3 * card_margin, 0 * card_margin))
+		this.positions.push(new BoardPosition(-3, 2))
+		this.positions.push(new BoardPosition(-3, 1))
+		this.positions.push(new BoardPosition(-3, 0))
+		this.positions.push(new BoardPosition(3, -2))
+		this.positions.push(new BoardPosition(3, -1))
+		this.positions.push(new BoardPosition(3, -0))
 
-		this.positions.push(new BoardPosition(3 * card_margin, -2 * card_margin))
-		this.positions.push(new BoardPosition(3 * card_margin, -1 * card_margin))
-		this.positions.push(new BoardPosition(3 * card_margin, -0 * card_margin))
+		this.positions.push(new DeckPosition(3, 1.4))
+		this.positions.push(new DeckPosition(3, 2.6))
 	}
 
-	update() {
-		for (let c of this.cards.list) {
-			c.update(this);
-		}
-	}
+	update() { }
 
 	draw() {
 		push();
@@ -192,23 +214,13 @@ class Board {
 		for (let p of this.positions) {
 			p.draw();
 		}
-		rect(0, 0, 5 * card_margin, 5 * card_margin);
-		for(let i = -2; i <= 2; i++) {
-			for(let j = -2; j <= 2; j++) {
-				rect(i * card_margin, j * card_margin, card_margin);
-			}
-		}
-		rect(-3 * card_margin, -1.4 * card_margin, card_margin, card_margin, margin);
-		rect(-3 * card_margin, -2.6 * card_margin, card_margin, card_margin, margin);
-		rect(3 * card_margin, 1.4 * card_margin, card_margin, card_margin, margin);
-		rect(3 * card_margin, 2.6 * card_margin, card_margin, card_margin, margin);
-		for (let c of this.cards.list) {
-			c.draw();
+		for (let p of this.positions) {
+			p.draw()
 		}
 		pop()
 	}
 
-	drop_card(card) {
+	update_attractor(card) {
 		let min = size * size;
 		let min_i = 0;
 		for (let i = 0; i < this.positions.length; i++) {
@@ -218,15 +230,7 @@ class Board {
 				min_i = i;
 			}
 		}
-		if(this.hand_position.dist(card) < min) {
-			card.position = this.hand_position
-			this.hand.push(card);
-			return
-		}
-		card.position = this.positions[min_i];
-		this.hand.pop(card)
-		this.cards.push(card)
-
+		this.positions[min_i].add(card)
 	}
 
 
@@ -234,40 +238,34 @@ class Board {
 
 class Game {
 	constructor() {
+		let l = 0;
 		this.deck = []
 		this.graveyard = []
 		this.hand = new DedupList()
 		this.opponent_hand = new DedupList()
 		this.board = new Board(this.hand, this.opponent_hand)
-		for(let i = 0; i < 5; i++) this.hand.push(new Card(this.board.hand_position, true))
-		for(let i = 0; i < 4; i++) this.opponent_hand.push(new Card(this.board.opponent_hand, false))
+		for(let i = 0; i < 5; i++) {
+			this.deck.push(new Card(this.board.hand_position, true, l++))
+			this.board.positions[0].add(this.deck.at(-1))
+		}
+		for(let i = 0; i < 4; i++) {
+			this.deck.push(new Card(this.board.opponent_hand, false, l++))
+			this.board.positions[1].add(this.deck.at(-1))
+		}
+
+		this.cards = getCards();
+
 
 		sizes();
 	}
 
-	draw_hands() {
-		push();
-		translate(centerX, centerY);
-		rectMode(CENTER);
-		for(let card of this.hand.list) {
-			card.draw();
-		}
-
-		for(let card of this.opponent_hand.list) {
-			card.draw()
-		}
-		pop()
-	}
 
 	update() {
 		this.board.update()
-		for(let card of this.hand.list) {
+		for(let card of this.deck) {
 			card.update(this.board);
 		}
-
-		for(let card of this.opponent_hand.list) {
-			card.update(this.board);
-		}
+		this.deck.sort((a, b) => b.display_preference - a.display_preference);
 	}
 
 	draw() {
@@ -275,21 +273,16 @@ class Game {
 		push()
 		translate(centerX, centerY);
 		rectMode(CENTER);
-		rect(-3 * card_margin, 0, card_margin)
-		rect(-3 * card_margin, card_margin, card_margin)
-		rect(-3 * card_margin, card_margin * 2, card_margin)
-		rect(3 * card_margin, 0, card_margin)
-		rect(3 * card_margin, - card_margin, card_margin)
-		rect(3 * card_margin, - card_margin * 2, card_margin)
+		this.deck.reverse()
+		for(let card of this.deck) {
+			card.draw();
+		}
+		this.deck.reverse()
+		image(this.cards[0], 0, 0)
 		pop()
-		this.draw_hands();
 	}
 
 }
-
-// game.draw()
-
-
 
 let game = null;
 function setup() {
@@ -308,8 +301,8 @@ function draw() {
 }
 
 function sizes() {
-	size = Math.min(windowWidth, windowHeight);
-	card_margin = size / 7
+	card_margin = Math.min(windowWidth / 7, windowHeight / 9);
+	size = card_margin * 7;
 	card_size = card_margin - margin;
 	centerX = windowWidth / 2;
 	centerY = windowHeight / 2;
@@ -320,6 +313,3 @@ function windowResized() {
 	resizeCanvas(windowWidth, windowHeight);
 	sizes();
 }
-
-
-

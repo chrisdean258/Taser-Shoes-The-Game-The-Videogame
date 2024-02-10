@@ -1,7 +1,10 @@
 #![allow(dead_code)]
 use clap::Parser;
 use serde::Deserialize;
+use std::fs::File;
+use std::io::Read;
 use std::path::PathBuf;
+use urlencoding::decode;
 use warp::Filter;
 
 #[derive(Parser, Debug)]
@@ -22,15 +25,16 @@ struct StartGameRequest {
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let port = args.port;
+    let log = warp::log("cards");
 
-    let index = warp::get()
+    let _index = warp::get()
         .and(warp::fs::file("html/index.html"))
         .map(|reply| {
             eprintln!("getting index");
             reply
         });
 
-    let html = warp::fs::dir("html").or(index);
+    let html = warp::fs::dir("html"); //.or(index);
 
     let css = warp::path("css").and(warp::fs::dir("css")).map(|reply| {
         eprintln!("getting css");
@@ -42,6 +46,18 @@ async fn main() -> anyhow::Result<()> {
         warp::reply::with_header(reply, "content-type", "text/javascript")
     });
 
+    let cards = warp::path!("cards" / String).map(|name: String| {
+        let name = decode(&name).expect("utf-8").into_owned();
+        let name = format!("cards/{name}");
+        let mut f = File::open(&name).expect("no file found");
+        let metadata = std::fs::metadata(&name).expect("unable to read metadata");
+        let mut buffer = vec![0; metadata.len() as usize];
+        let _ = f.read(&mut buffer).expect("buffer overflow");
+        warp::http::Response::builder()
+            .header("Content-Type", "image/png")
+            .body(buffer)
+    });
+
     let start_game = warp::path("game")
         .and(warp::post())
         .and(warp::body::form::<StartGameRequest>())
@@ -51,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
             reply
         });
 
-    let server = css.or(js).or(start_game).or(html);
+    let server = css.or(js).or(start_game).or(cards).or(html).with(log);
 
     eprintln!("Serving on 0.0.0.0:{port}");
     warp::serve(server).run(([0, 0, 0, 0], port)).await;
