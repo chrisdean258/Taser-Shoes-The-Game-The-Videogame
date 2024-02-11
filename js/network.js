@@ -1,4 +1,5 @@
-const socket = new WebSocket("ws://localhost:8080/ws");
+const code = document.cookie.split("; ").find((row) => row.startsWith("code=")).split("=")[1];
+const socket = new WebSocket(`ws://localhost:8080/ws/${code}`);
 
 socket.addEventListener("message", (event) => {
 	console.log("Message from server ", event.data);

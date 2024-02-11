@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 use clap::Parser;
-use futures::{SinkExt, StreamExt};
+use futures::{stream::SplitSink, SinkExt, StreamExt};
 // use futures::{FutureExt, StreamExt};
 use serde::Deserialize;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
-use tokio::sync::RwLock;
+use tokio::sync::{oneshot, RwLock};
 use warp::{
     ws::{Message, WebSocket},
     Filter, Rejection, Reply,
@@ -26,43 +26,52 @@ struct StartGameRequest {
 
 #[derive(Debug)]
 struct Connections {
-    cons: HashMap<usize, futures::stream::SplitSink<WebSocket, Message>>,
+    cons: HashMap<
+        String,
+        (
+            SplitSink<WebSocket, Message>,
+            oneshot::Sender<SplitSink<WebSocket, Message>>,
+        ),
+    >,
 }
 
-async fn client_connection(ws: WebSocket, users: Arc<RwLock<Connections>>) {
+async fn client_connection(code: String, ws: WebSocket, users: Arc<RwLock<Connections>>) {
+    eprintln!("websocket handler {code}");
     let (client_ws_sender, mut client_ws_rcv) = ws.split();
     let mut all_users = users.write().await;
-    let len = all_users.cons.len();
-    all_users.cons.insert(len, client_ws_sender);
-    drop(all_users);
+
+    let mut sink = match all_users.cons.remove(&code) {
+        Some((sink, chan)) => {
+            drop(all_users);
+            eprintln!("found for partner on code={code}");
+            chan.send(client_ws_sender).expect("Oneshot");
+            sink
+        }
+        None => {
+            let (sender, reciever) = oneshot::channel();
+            eprintln!("waiting for partner on code={code}");
+            all_users.cons.insert(code, (client_ws_sender, sender));
+            drop(all_users);
+            reciever.await.expect("broken oneshot")
+        }
+    };
+
     while let Some(msg) = client_ws_rcv.next().await {
         let msg = msg.expect("Ws");
         eprintln!("{msg:?}");
-        let mut dead = Vec::new();
-        for (num, client) in users.write().await.cons.iter_mut() {
-            if len == *num {
-                continue;
-            }
-            match client.send(msg.clone()).await {
-                Ok(_) => {}
-                Err(_) => {
-                    dead.push(*num);
-                }
-            }
-        }
-        let mut all_users = users.write().await;
-        for d in dead {
-            eprintln!("removing {d}");
-            all_users.cons.remove(&d);
+        match sink.send(msg).await {
+            Ok(_) => (),
+            Err(_) => break,
         }
     }
 }
 
 async fn ws_handler(
+    code: String,
     ws: warp::ws::Ws,
     users: Arc<RwLock<Connections>>,
 ) -> Result<impl Reply, Rejection> {
-    Ok(ws.on_upgrade(|websocket| client_connection(websocket, users)))
+    Ok(ws.on_upgrade(|websocket| client_connection(code, websocket, users)))
 }
 
 #[tokio::main]
@@ -96,14 +105,12 @@ async fn main() -> anyhow::Result<()> {
     let cards = warp::path!("cards" / "full" / ..)
         .and(warp::fs::dir("./cards/full"))
         .map(|reply| {
-            eprintln!("getting card");
             warp::reply::with_header(reply, "content-type", "image/png")
         });
 
     let cards = warp::path!("cards" / "small" / ..)
         .and(warp::fs::dir("./cards/small"))
         .map(|reply| {
-            eprintln!("getting card");
             warp::reply::with_header(reply, "content-type", "image/png")
         })
         .or(cards);
@@ -115,13 +122,13 @@ async fn main() -> anyhow::Result<()> {
         .and(warp::post())
         .and(warp::body::form::<StartGameRequest>())
         .and(warp::fs::file("html/game.html"))
-        .map(|req, reply| {
+        .map(|req: StartGameRequest, reply| {
             eprintln!("got {req:?}");
-            reply
+            warp::reply::with_header(reply, "set-cookie", format!("code={}", req.code))
         });
 
     let users = warp::any().map(move || connections.clone());
-    let ws = warp::path("ws")
+    let ws = warp::path!("ws" / String)
         .and(warp::ws())
         .and(users)
         .and_then(ws_handler);

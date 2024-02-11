@@ -46,10 +46,11 @@ class Card {
 		this.y = 0;
 		this.position = null
 		this.prev_pressed = false
-		this.display_preference = 0;
+		this.display_preference = - Math.random();
 		this.image = image
 		this.show_big = false;
 		this.face_up = false;
+		this.grabbable = true;
 	}
 
 	draw() {
@@ -75,20 +76,28 @@ class Card {
 	}
 
 	pressed(board) {
-		if (this.is_mine && !holding && mouseIsPressed && mouseButton === LEFT && this.over()) {
-			holding = true;
-			if(!this.prev_pressed){
-				this.offsetX = this.x - mouseX;
-				this.offsetY = this.y - mouseY;
-			}
-			this.prev_pressed = true;
-			this.held = true;
+		let over = this.over();
+		if (this.grabbable && this.is_mine && !holding && mouseIsPressed && mouseButton === LEFT && over) {
+			this.position.clickAction(this)
 		} else if(this.prev_pressed && !mouseIsPressed) {
 			this.held = false;
 			this.prev_pressed = false;
 			holding = false;
 			this.position.dropAction(this)
 		}
+		if(!mouseIsPressed && over) {
+			this.position.noClickAction(this)
+		}
+	}
+
+	grab() {
+		holding = true;
+		if(!this.prev_pressed){
+			this.offsetX = this.x - mouseX;
+			this.offsetY = this.y - mouseY;
+		}
+		this.prev_pressed = true;
+		this.held = true;
 	}
 
 	over() {
@@ -147,6 +156,7 @@ class Position {
 		if(v.mag() <= rtnspeed){
 			card.x = coords.x
 			card.y = coords.y
+			card.grabbable = true;
 		} else {
 			v.setMag(rtnspeed);
 			card.x -= v.x;
@@ -174,6 +184,12 @@ class Position {
 
 	dropAction(card) { }
 
+	clickAction(card) {
+		card.grab()
+	}
+
+	noClickAction() { }
+
 }
 
 class BoardPosition extends Position {
@@ -197,7 +213,26 @@ class TrapPosition extends BoardPosition {
 	}
 }
 
-class DeckPosition extends Position { }
+class DeckPosition extends Position {
+	constructor(x, y) {
+		super(x, y)
+		this.available = true;
+	}
+
+	clickAction(card) {
+		console.log("click action from deck")
+		if(this.available) {
+			updates.push({type: "self-position",  cardnum: card.number, positionnum: 0})
+		}
+		this.available = false
+	}
+
+	noClickAction(card) {
+		this.available = true;
+	}
+}
+
+class GravePosition extends Position { }
 
 class LinePosition extends Position {
 	constructor(y, attractive) {
@@ -228,18 +263,19 @@ class PlayPosition extends LinePosition {
 	}
 }
 
-
-
-
-
 class MyHandPosition extends HandPosition {
-	add(card) {
-		super.add(card)
+	dropAction(card) {
 		card.face_up = true
+		card.grabbable = false;
 	}
 }
 
-class OppHandPosition extends HandPosition { }
+class OppHandPosition extends HandPosition {
+	add(card) {
+		super.add(card)
+		card.face_up = false
+	}
+}
 
 
 class Board {
@@ -261,12 +297,12 @@ class Board {
 
 		this.my_deck = new DeckPosition(3, 1.4, false);
 		this.positions.push(this.my_deck)
-		this.my_grave = new DeckPosition(3, 2.6, true)
+		this.my_grave = new GravePosition(3, 2.6, true)
 		this.positions.push(this.my_grave);
 
 		this.opp_deck = new DeckPosition(-3, -1.4, false);
 		this.positions.push(this.opp_deck)
-		this.opp_grave = new DeckPosition(-3, -2.6, false)
+		this.opp_grave = new GravePosition(-3, -2.6, false)
 		this.positions.push(this.opp_grave);
 
 		this.positions.push(new PlayPosition(4, true));
@@ -340,6 +376,13 @@ class Game {
 				let new_pos = map_position(update.positionnum)
 				this.board.positions[new_pos].add(this.stable_op_deck[update.cardnum])
 				this.stable_op_deck[update.cardnum].display_preference = frameCount;
+			}
+			if(update.type == "self-position") {
+				let new_pos = update.positionnum
+				this.board.positions[new_pos].add(this.stable_deck[update.cardnum])
+				this.board.positions[new_pos].dropAction(this.stable_deck[update.cardnum])
+				this.stable_deck[update.cardnum].display_preference = frameCount;
+				emit_position_update(update.cardnum, update.positionnum)
 			}
 			if(update.type == "faceup") {
 				this.stable_op_deck[update.cardnum].face_up = true;
