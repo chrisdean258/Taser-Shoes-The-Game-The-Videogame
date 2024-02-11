@@ -1,4 +1,4 @@
-![logo.png]
+![](logo.png)
 
 This is an implementation of Taser Shoes: The Game as an online arena.
 
