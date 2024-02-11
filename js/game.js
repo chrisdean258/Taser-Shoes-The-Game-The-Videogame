@@ -408,16 +408,16 @@ class Game {
 		imageMode(CENTER)
 		translate(centerX, centerY);
 		rectMode(CENTER);
-		this.deck.reverse()
-		for(let card of this.deck) {
-			card.draw();
-		}
-		this.deck.reverse()
 		this.opp_deck.reverse()
 		for(let card of this.opp_deck) {
 			card.draw();
 		}
 		this.opp_deck.reverse()
+		this.deck.reverse()
+		for(let card of this.deck) {
+			card.draw();
+		}
+		this.deck.reverse()
 		pop()
 	}
 
