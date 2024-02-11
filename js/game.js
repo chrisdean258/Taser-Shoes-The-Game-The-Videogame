@@ -46,16 +46,22 @@ class Card {
 		this.prev_pressed = false
 		this.display_preference = 0;
 		this.image = image
+		this.show_big = false;
 	}
 
 	draw() {
-		rect(this.x, this.y, card_size, card_size, margin)
+		// rect(this.x, this.y, card_size, card_size, margin)
 		let img = this.image.small;
 		image(img, this.x, this.y, card_size, card_size, 0, 0, img.width, img.height, CONTAIN);
+		if(this.show_big) {
+			let img2 = this.image.full;
+			image(img2, 0, 0, card_margin * 3, card_margin * 3)
+
+		}
 	}
 
 	pressed(board) {
-		if (this.is_mine && !holding && mouseIsPressed && this.over()) {
+		if (this.is_mine && !holding && mouseIsPressed && mouseButton === LEFT && this.over()) {
 			holding = true;
 			if(!this.prev_pressed){
 				this.offsetX = this.x - mouseX;
@@ -86,6 +92,7 @@ class Card {
 		} else {
 			this.position.attract(this)
 		}
+		this.show_big = this.over() && mouseIsPressed && mouseButton == RIGHT
 
 	}
 }
