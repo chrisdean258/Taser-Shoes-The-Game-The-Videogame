@@ -50,14 +50,18 @@ class Card {
 	}
 
 	draw() {
-		// rect(this.x, this.y, card_size, card_size, margin)
+		push()
+		rect(this.x, this.y, card_size, card_size, margin)
 		let img = this.image.small;
 		image(img, this.x, this.y, card_size, card_size, 0, 0, img.width, img.height, CONTAIN);
+		noFill()
+		rect(this.x, this.y, card_size, card_size, margin)
 		if(this.show_big) {
 			let img2 = this.image.full;
 			image(img2, 0, 0, card_margin * 3, card_margin * 3)
 
 		}
+		pop()
 	}
 
 	pressed(board) {
@@ -93,7 +97,7 @@ class Card {
 			this.position.attract(this)
 		}
 		this.show_big = this.over() && mouseIsPressed && mouseButton == RIGHT
-
+		if(this.show_big) this.display_preference = frameCount;
 	}
 }
 

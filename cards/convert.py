@@ -3,7 +3,7 @@
 import os
 import subprocess
 
-target = "/home/chris/git/Taser-Shoes-the-game/cards/cards/"
+target = os.environ["HOME"] + "/git/Taser-Shoes-the-game/cards/cards/"
 
 names = {}
 
@@ -22,4 +22,4 @@ for file in os.listdir(target):
         continue
     other_filename = file.split(".")[0] + ".png"
     i = names[other_filename]
-    subprocess.run(["cp", f"{target}/{file}", f"small/{i}.png"])
+    subprocess.run(["convert", f"{target}/{file}", "-fuzz", "5%", "-transparent", "white", f"small/{i}.png"])
