@@ -7,6 +7,7 @@ let centerY = 0;
 let rtnspeed = 25;
 let holding = false;
 let all_positions = []
+let back = null;
 
 class DedupList {
 	constructor() {
@@ -37,26 +38,35 @@ class DedupList {
 }
 
 class Card {
-	constructor(position, is_mine, image) {
+	constructor(number, is_mine, image) {
+		this.number = number
 		this.is_mine = is_mine;
 		this.held = false;
 		this.x = 0;
 		this.y = 0;
-		this.position = position;
+		this.position = null
 		this.prev_pressed = false
 		this.display_preference = 0;
 		this.image = image
 		this.show_big = false;
+		this.face_up = false;
 	}
 
 	draw() {
 		push()
 		rect(this.x, this.y, card_size, card_size, margin)
-		let img = this.image.small;
+		let img;
+		if (this.face_up) {
+			img = this.image.small;
+		} else {
+			img = back
+		}
 		image(img, this.x, this.y, card_size, card_size, 0, 0, img.width, img.height, CONTAIN);
 		noFill()
+		strokeWeight(4)
+		if (!this.is_mine) stroke('red');
 		rect(this.x, this.y, card_size, card_size, margin)
-		if(this.show_big) {
+		if((this.is_mine || this.face_up) && this.show_big) {
 			let img2 = this.image.full;
 			image(img2, 0, 0, card_margin * 3, card_margin * 3)
 
@@ -77,6 +87,7 @@ class Card {
 			this.held = false;
 			this.prev_pressed = false;
 			holding = false;
+			this.position.dropAction(this)
 		}
 	}
 
@@ -91,7 +102,7 @@ class Card {
 		if (this.held) {
 			this.x = mouseX + this.offsetX;
 			this.y = mouseY + this.offsetY;
-			board.update_attractor(this)
+			board.update_postion(this)
 			this.display_preference = frameCount;
 		} else {
 			this.position.attract(this)
@@ -102,9 +113,10 @@ class Card {
 }
 
 class Position {
-	constructor(x, y) {
+	constructor(x, y, attractive) {
 		this.cards = new DedupList();
 		this.pos = createVector(x, y)
+		this.attractive = attractive
 	}
 
 	draw() {
@@ -160,6 +172,8 @@ class Position {
 		return this.pos.y * card_margin
 	}
 
+	dropAction(card) { }
+
 }
 
 class BoardPosition extends Position {
@@ -169,13 +183,25 @@ class BoardPosition extends Position {
 		let dy = i * margin;
 		return this.pos.y * card_margin + dy
 	}
+
+	dropAction(card) {
+		card.face_up = true
+		emit_faceup_card(card.number)
+	}
+}
+
+class TrapPosition extends BoardPosition {
+	add(card) {
+		super.add(card)
+		card.face_up = false
+	}
 }
 
 class DeckPosition extends Position { }
 
-class HandPosition extends Position {
-	constructor(y) {
-		super(0, y)
+class LinePosition extends Position {
+	constructor(y, attractive) {
+		super(0, y, attractive)
 	}
 
 	draw() {
@@ -194,27 +220,57 @@ class HandPosition extends Position {
 	}
 }
 
+class HandPosition extends LinePosition { }
+class PlayPosition extends LinePosition {
+	dropAction(card) {
+		card.face_up = true
+		emit_faceup_card(card.number)
+	}
+}
+
+
+
+
+
+class MyHandPosition extends HandPosition {
+	add(card) {
+		super.add(card)
+		card.face_up = true
+	}
+}
+
+class OppHandPosition extends HandPosition { }
+
 
 class Board {
-	constructor(hand, opp_hand) {
+	constructor() {
 		this.positions = []
-		this.hand = hand;
-		this.positions.push(new HandPosition(4));
-		this.positions.push(new HandPosition(-4));
+		this.positions.push(new MyHandPosition(5, true));
+		this.positions.push(new OppHandPosition(-5, false));
 		for(let i = -2; i <= 2; i++) {
 			for(let j = -3; j <= 3; j++) {
-				this.positions.push(new BoardPosition(i, j))
+				this.positions.push(new BoardPosition(i, j, j != -3))
 			}
 		}
-		this.positions.push(new BoardPosition(-3, 2))
-		this.positions.push(new BoardPosition(-3, 1))
-		this.positions.push(new BoardPosition(-3, 0))
-		this.positions.push(new BoardPosition(3, -2))
-		this.positions.push(new BoardPosition(3, -1))
-		this.positions.push(new BoardPosition(3, -0))
+		this.positions.push(new TrapPosition(-3, 2, true))
+		this.positions.push(new TrapPosition(-3, 1, true))
+		this.positions.push(new TrapPosition(-3, 0, true))
+		this.positions.push(new TrapPosition(3, -2, false))
+		this.positions.push(new TrapPosition(3, -1, false))
+		this.positions.push(new TrapPosition(3, -0, false))
 
-		this.positions.push(new DeckPosition(3, 1.4))
-		this.positions.push(new DeckPosition(3, 2.6))
+		this.my_deck = new DeckPosition(3, 1.4, false);
+		this.positions.push(this.my_deck)
+		this.my_grave = new DeckPosition(3, 2.6, true)
+		this.positions.push(this.my_grave);
+
+		this.opp_deck = new DeckPosition(-3, -1.4, false);
+		this.positions.push(this.opp_deck)
+		this.opp_grave = new DeckPosition(-3, -2.6, false)
+		this.positions.push(this.opp_grave);
+
+		this.positions.push(new PlayPosition(4, true));
+		this.positions.push(new PlayPosition(-4, false));
 	}
 
 	update() { }
@@ -232,47 +288,75 @@ class Board {
 		pop()
 	}
 
-	update_attractor(card) {
+	update_postion(card) {
 		let min = size * size;
 		let min_i = 0;
 		for (let i = 0; i < this.positions.length; i++) {
+			if(!this.positions[i].attractive) continue;
 			let d = this.positions[i].dist(card);
 			if(d < min){
 				min = d;
 				min_i = i;
 			}
 		}
-		this.positions[min_i].add(card)
+		if (card.position != this.positions[min_i]) {
+			this.positions[min_i].add(card)
+			emit_position_update(card.number, min_i)
+		}
 	}
-
-
 }
 
 class Game {
 	constructor() {
 		let l = 0;
 		this.deck = []
-		this.graveyard = []
+		this.opp_deck = []
 		this.hand = new DedupList()
 		this.opponent_hand = new DedupList()
-		this.board = new Board(this.hand, this.opponent_hand)
+		this.board = new Board()
 
 		this.cards = getCards();
+		let i = 0;
 		for(let card of this.cards) {
-			this.deck.push(new Card(this.board.hand_position, true, card))
-			this.board.positions.at(-2).add(this.deck.at(-1))
+			this.deck.push(new Card(i++, true, card))
+			this.board.my_deck.add(this.deck.at(-1))
 		}
 
+		i = 0;
+		for(let card of this.cards) {
+			this.opp_deck.push(new Card(i++, false, card))
+			this.board.opp_deck.add(this.opp_deck.at(-1))
+		}
 		sizes();
+		this.stable_deck = [...this.deck];
+		this.stable_op_deck = [...this.opp_deck];
 	}
 
 
 	update() {
 		this.board.update()
+		for(let update of updates) {
+			if(update.type == "position") {
+				let new_pos = map_position(update.positionnum)
+				this.board.positions[new_pos].add(this.stable_op_deck[update.cardnum])
+				this.stable_op_deck[update.cardnum].display_preference = frameCount;
+			}
+			if(update.type == "faceup") {
+				this.stable_op_deck[update.cardnum].face_up = true;
+			}
+		}
+		updates = []
+
 		for(let card of this.deck) {
 			card.update(this.board);
 		}
+
+		for(let card of this.opp_deck) {
+			card.update(this.board);
+		}
+
 		this.deck.sort((a, b) => b.display_preference - a.display_preference);
+		this.opp_deck.sort((a, b) => b.display_preference - a.display_preference);
 	}
 
 	draw() {
@@ -286,6 +370,11 @@ class Game {
 			card.draw();
 		}
 		this.deck.reverse()
+		this.opp_deck.reverse()
+		for(let card of this.opp_deck) {
+			card.draw();
+		}
+		this.opp_deck.reverse()
 		pop()
 	}
 
@@ -297,6 +386,7 @@ function setup() {
 	const canvas_elem = document.getElementById("canvas");
 	const canvas = createCanvas(windowWidth, windowHeight, canvas_elem);
 	sizes();
+	back = getBack();
 	game = new Game();
 }
 
@@ -308,7 +398,7 @@ function draw() {
 }
 
 function sizes() {
-	card_margin = Math.min(windowWidth / 7, windowHeight / 9);
+	card_margin = Math.min(windowWidth / 7, windowHeight / 11);
 	size = card_margin * 7;
 	card_size = card_margin - margin;
 	centerX = windowWidth / 2;

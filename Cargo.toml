@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.79"
 clap = { version = "4.5.0", features = ["derive"] }
+futures = "0.3.30"
 http = "1.0.0"
 serde = { version = "1.0.196", features = ["derive", "rc"]}
 tokio = { version = "1.36.0", features = ["full"]}
